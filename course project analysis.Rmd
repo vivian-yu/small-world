@@ -1,0 +1,45 @@
+---
+title: "Analysis"
+author: "Wei Yu"
+date: "March 27, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Including Plots
+
+
+
+```{r }
+### step 1: clean the training data and testing data;
+# there are a lot of variables with blank or 'NA', I dropped these variables from the model;
+# Training data split two to test; 
+## example codes like below: 
+setwd("E:/Coursera/Practical Machine Learning");
+getwd()
+InputData_Temp <- read.csv("pml-training.csv")
+InputData_Temp$classe2=unclass(InputData_Temp$classe)
+InputData = InputData_Temp[, c(6:11, 37:49, 60:68,84:86, 102,113:124,140,151:159,160, 161)]
+
+### Step 2: run the deep learning codes; 
+### Total has 54 variables in the model;
+### Run the neural networks codes;
+### set the dependent variable classe as 1 to 5, so that we will have 5 nodes in the neural network; 
+### using dropout to run; 
+
+### get the training data set accuracy about 98%; 
+
+### Step 3: got the prediction on the test dataset and 100% accurary!
+
+
+### Step 4: Also tried tradition predictive modelling techiques; 
+### changed the dependent variable classe to 5 dummy variables and run 5 logistic models to get the probababity for 5 predictions then pick up the highese probability as the prediction;
+### the model is 85% accuary. 
+
+```
+
+

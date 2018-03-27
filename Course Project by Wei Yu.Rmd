@@ -1,0 +1,406 @@
+---
+title: "Course Project - Practical Machine Learning"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+library(matlab)
+library(abind)
+library(mlr)
+library(keras)
+library(tensorflow)
+library(unbalanced)
+K <- backend(convert = TRUE)
+```
+
+
+```{r}
+setwd("E:/Coursera/Practical Machine Learning");
+getwd()
+InputData_Temp <- read.csv("pml-training.csv")
+InputData_Temp$classe2=unclass(InputData_Temp$classe)
+InputData = InputData_Temp[, c(6:11, 37:49, 60:68,84:86, 102,113:124,140,151:159,160, 161)]
+TestData_Temp = read.csv("pml-testing.csv")
+TestData = TestData_Temp[, c(6:11, 37:49, 60:68,84:86, 102,113:124,140,151:159)]
+str(InputData[,1:10])
+```
+
+
+```{r}
+set.seed(4123)
+nRows <- NROW(InputData)
+InputData <- InputData[sample(nRows,nRows, replace = FALSE, prob = NULL),]
+InputData$X <- NULL
+TestData$X <- NULL
+str(InputData[])
+```
+
+
+
+```{r Data Cleansing Notes}
+# I don't need classe2
+InputData$classe2 <- NULL 
+
+
+# The cataegorical variable new_window can be modified to a binary variable
+InputData$new_window <- as.integer(InputData$new_window == "no")
+TestData$new_window <- as.integer(TestData$new_window == "no")
+library(caret)
+# center the data;
+#preObj=preProcess(InputData[, 2:54], method=c("center", "scale"))
+#InputData =predict(preObj, InputData)
+#preObj2=preProcess(TestData[, 2:54], method=c("center", "scale"))
+#TestData =predict(preObj2, TestData)
+
+str(InputData[,1:10])
+
+```
+```{r Next Convert your Predictands to integers}
+ClassDict    <- levels(InputData$classe)
+write.csv(ClassDict, file = "ClassDict.csv")
+
+InputData$classe <- as.integer(InputData$classe)
+str(InputData)
+```
+
+
+
+```{r Now there are no categorical fields}
+
+Y <- InputData$classe
+Y_original <- Y
+Y <- Y-1
+str(Y)
+
+X <- InputData
+X$classe <- NULL
+str(X[,1:10])
+
+#Y2 <- TestData$classe
+#Y2_original <- Y2
+#Y2 <- Y2-1
+#str(Y2)
+
+X2 <- TestData
+
+
+
+```
+
+
+
+```{r}
+
+Y_Train <- Y[1:17700]   # 358537
+X_Train <- X[1:17700,] 
+
+
+Y_Dev  <- Y[17701:19622] 
+X_Dev  <- X[17701:19622,]
+
+#Y_Test  <- Y2[1:20] 
+X_Test  <- X2[1:20,]
+
+```
+
+
+
+
+```{r}
+
+X_Train <- as.matrix(X_Train)
+dim_X_Train <- dim(X_Train)
+X_Train <- reshape(X_Train, c(dim_X_Train[1],dim_X_Train[2],1))
+dim(X_Train)
+
+Y_Train <- as.matrix(Y_Train)
+Y_Train <- reshape(Y_Train, c(dim_X_Train[1],1))
+dim(Y_Train)
+print("                   ")
+
+
+
+
+X_Dev   <- as.matrix(X_Dev)
+dim_X_Dev <- dim(X_Dev)
+X_Dev <- reshape(X_Dev, c(dim_X_Dev[1],dim_X_Dev[2],1))
+dim(X_Dev)
+
+Y_Dev <- as.matrix(Y_Dev)
+Y_Dev   <- reshape(Y_Dev, c(dim_X_Dev[1],1))
+dim(Y_Dev)
+
+X_Test   <- as.matrix(X_Test)
+dim_X_Test <- dim(X_Test)
+X_Test <- reshape(X_Test, c(dim_X_Test[1],dim_X_Test[2],1))
+dim(X_Test)
+
+#Y_Test <- as.matrix(Y_Test)
+#Y_Test   <- reshape(Y_Test, c(dim_X_Test[1],1))
+#dim(Y_Test)
+
+
+```
+
+
+
+
+```{r API Model}
+dropout <- 0.25
+dropout_conv <- 0.0
+
+reg_lambda <-0
+ks <- 3
+set.seed(3234)
+
+
+
+main_input <- layer_input(shape = c(54,1), name = "input_layer")
+
+hidden_layers <- main_input %>%
+  
+  
+  # hidden layers
+  
+  # Block 1
+  #   hidden layer 1
+  layer_conv_1d(filter = 32, kernel_size = 3, padding = "valid",  name = "hidden_layer_1", strides = 2)%>%
+  layer_batch_normalization(name = "hidden_layer_1_normalization")%>%
+  layer_activation_leaky_relu(name = "hidden_layer_1_activation", alpha = 0.1)%>%
+  # pooling 1
+  layer_max_pooling_1d(pool_size = 2, name = "max_pooling_BLOCK1", strides = 2)%>%
+ 
+   # dropout
+   layer_dropout(rate = dropout_conv, name = "BLOCK_1_Dropout")%>%
+  
+  
+  # Block 2
+  #   hidden layer 2
+  layer_conv_1d(filter = 16, kernel_size = ks, padding = "same", name = "hidden_layer_2")%>%
+  layer_batch_normalization(name = "hidden_layer_2_normalization")%>%
+  layer_activation_leaky_relu(name = "hidden_layer_2_activation", alpha = 0.1)%>%
+  # pooling 2
+  layer_max_pooling_1d(pool_size = 2, name = "max_pooling_BLOCK2", strides = 2)%>%
+ 
+  # dropout
+  layer_dropout(rate = dropout_conv, name = "BLOCK_2_Dropout")%>%
+
+  
+ 
+  
+  # flatten the input
+  layer_flatten()
+  
+
+fc_hidden_layers <-  hidden_layers%>%
+  
+  # fully connected layers
+  
+  layer_dense(192, name = "fully_connected_layer_1")%>%
+  layer_dropout(rate = dropout, name = "fully_connected_layer_1_Dropout")%>%
+  layer_activity_regularization(l2 = reg_lambda, name = "fully_connected_layer_1_regularization")%>%
+  layer_batch_normalization(name = "fully_connected_layer_1_normalization")%>%
+  layer_activation_leaky_relu(name = "fully_connected_layer_1_activation", alpha = 0.1)%>%
+
+
+  layer_dense(81, name = "fully_connected_layer_2")%>%
+  layer_dropout(rate = dropout, name = "fully_connected_layer_2_Dropout")%>%
+  layer_activity_regularization(l2 = reg_lambda, name = "fully_connected_layer_2_regularization")%>%
+  layer_batch_normalization(name = "fully_connected_layer_2_normalization")%>%
+  layer_activation_leaky_relu(name = "fully_connected_layer_2_activation", alpha  = 0.1)
+
+
+  
+  
+output_1 <- fc_hidden_layers %>%
+  layer_dense(units = 5, name = "output_node_1", activation = "softmax")
+
+
+
+
+model <- keras_model(inputs = c(main_input), outputs = c(output_1)) 
+
+summary(model)
+```
+
+```{r}
+# F1score
+metric_f1score_pred <- function(y_true, y_pred)  {
+  # calculate the metric
+  tp <- K$sum(K$cast((y_pred == 1) & (y_true == 1), 'float'))
+  fp <- K$sum(K$cast((y_pred == 1) & (y_true == 0), 'float'))
+  fn <- K$sum(K$cast((y_pred == 0) & (y_true == 1), 'float'))
+  tn <- K$sum(K$cast((y_pred == 0) & (y_true == 0), 'float'))
+  
+  
+  prec <- tp/(tp + fp + 1e-10)
+  rec  <- tp/(tp + fn + 1e-10)
+  f1score <- 2*prec*rec/(prec + rec + 1e-8)
+  
+  return(f1score)
+}
+
+
+
+# Sample Statistics functions
+precision_recall_f1score <- function(y_true, y_pred)  {
+  
+  tp <- sum((y_pred == 1)  & (y_true == 1))
+  fp <- sum((y_pred == 1)  & (y_true == 0))
+  fn <- sum((y_pred == 0)  & (y_true == 1))
+  tn <- sum((y_pred == 0)  & (y_true == 0))
+  
+  precisionS <- tp/(tp + fp + 1e-10) 
+  recallS    <- tp/(tp + fn + 1e-10)
+  f1scoreS   <- (2*precisionS*recallS)/(precisionS + recallS + 1e-10)
+  
+  return(c(precisionS,recallS,f1scoreS))
+}
+
+
+# Best Threshold function
+BestThreshold <- function(Y, Y_probability) {
+  bestF1 <- 0.0
+  startS <- min(Y_probability)
+  endS   <- max(Y_probability)
+  del    <- (endS - startS)/1e2
+  
+  for (i in seq(startS,endS, by = del)){
+    Y_pred <- as.integer(Y_probability >i)
+    response <- precision_recall_f1score(Y, Y_pred)
+    F1 <- response[3]
+    
+    
+    
+    
+    
+    if(F1 > bestF1){
+      bestF1 <- F1
+      threshold <- i}
+  }
+  return(c(threshold, bestF1)) 
+}
+
+
+# create custom metric to wrap metric with parameter
+
+metric_sparse_top_3_categorical_accuracy <- function(y_true, y_pred) {
+  metric_sparse_top_k_categorical_accuracy(y_true, y_pred, k = 3)
+}
+
+metric_sparse_top_5_categorical_accuracy <- function(y_true, y_pred) {
+  metric_sparse_top_k_categorical_accuracy(y_true, y_pred, k = 5)
+}
+
+
+metric_sparse_top_1_categorical_accuracy <- function(y_true, y_pred) {
+  metric_sparse_top_k_categorical_accuracy(y_true, y_pred, k = 1)
+}
+
+```
+
+
+```{r}
+initializer_he_uniform()
+```
+
+```{r}
+# compiling the defined model with metric = accuracy and optimiser as adam
+model %>% compile(loss = list(output_node_1 = 'sparse_categorical_crossentropy'), 
+                  optimizer_adam(lr = 0.001, beta_1 = 0.9, beta_2 = 0.999, epsilon = 1e-08, decay = 0.0005, clipnorm = NULL, clipvalue = NULL),
+                  metrics = c(top_1 = metric_sparse_top_1_categorical_accuracy,top_3 = metric_sparse_top_3_categorical_accuracy, top_5 = metric_sparse_top_5_categorical_accuracy))
+
+
+```
+
+```{r}
+tic()
+bsize <- 128
+set.seed(3234)
+
+
+step_decay_growth <- function(epoch) {
+  
+  if(epoch <= 5) {
+    lrate <- 0.01
+  } else if (epoch > 5 | epoch <= 75 ) {
+    lrate <- 0.01
+  } else if (epoch > 75 | epoch < 105) {
+    lrate <- 0.001
+  } else if (epoch > 105){
+    lrate <- 0.0001
+  }
+  return(lrate)
+}
+
+model %>%
+  fit(x = list(input_layer = X_Train), 
+      y = list(output_node_1 = Y_Train),
+      
+      epochs = 100, 
+      batch_size = bsize, 
+      
+      validation_data = list((X_Dev), 
+      list(output_node_1 = Y_Dev)),
+      
+    callbacks = list(
+      callback_reduce_lr_on_plateau(monitor = "loss", factor = 0.1, patience = 3),
+      
+      callback_csv_logger( 'log.csv', separator = ",", append = TRUE),
+      callback_progbar_logger(count_mode = "samples")),
+      
+      verbose = 1, 
+      shuffle = TRUE,
+      view_metrics = "auto")
+
+
+
+# Evaluating model on the development dataset
+loss_and_metrics <- model %>% evaluate(x = list(input_layer = X_Dev),
+                                       y = list(output_node_1 = Y_Dev),
+                                       batch_size = bsize)
+loss_and_metrics
+
+
+
+# Convert the trained model to an R object which can be saved and restored accros R sessions (saves architecture and weights)
+serialize_model(model, include_optimizer = TRUE)
+# unserialize_model(model, custom_objects = NULL, compile = TRUE)
+elapsedTime <- toc()
+```
+
+
+```{r Predictions}
+Y_Pred_Train <- predict(model, X_Train, batch_size = bsize, verbose = 1)
+
+Y_Pred_Test <- predict(model, X_Test, batch_size = bsize, verbose = 1)
+
+```
+ 
+```{r}
+Y_Prediction <- zeros(size(Y_Pred_Test)[1],1)
+Y_Probability <- zeros(size(Y_Pred_Test)[1],1)
+
+
+
+for (i in 1:size(Y_Pred_Test)[1]) {
+temp <- sort(Y_Pred_Test[i,], index.return = TRUE)
+
+Y_Prediction[i,] <- temp$ix[5]
+Y_Probability[i,] <- temp$x[5]
+
+}
+
+```
+
+
+
+```{r output}
+TestResult4=data.frame(cbind(TestData,Y_Prediction))
+write.csv(TestResult4,"TestResult5.csv")
+```
+
+
+
